@@ -1,0 +1,15 @@
+[Unit]
+Description=fleet end-to-end harness network (operator and always-allow namespaces)
+# After the boot unit deliberately: the fail-closed ruleset must load before
+# these interfaces exist, which is what proves boot.nft's iifname rules load
+# against an absent interface.
+After=postern-boot.service
+Before=posternd.service ssh.service postern-hub.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/postern-fleet-e2e/netsetup.sh
+
+[Install]
+WantedBy=multi-user.target

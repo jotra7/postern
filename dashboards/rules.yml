@@ -1,0 +1,155 @@
+# Prometheus rules for postern. Load alongside the scrape config:
+#
+#   rule_files:
+#     - /etc/prometheus/postern-rules.yml
+#
+# This file is where "health is the join" is actually computed, and that is a
+# deliberate answer rather than a shortcut.
+#
+# Design section 8: "an agent reporting itself healthy while the probe cannot
+# reach it is the most valuable state the system surfaces, because it is
+# exactly the condition that makes a break-glass door useless on the day it is
+# needed. That state is red and alerts."
+#
+# No postern process can publish that state as a single number. The agent's
+# /metrics is on the gated host, bound to its always-allow interface. The probe
+# is a client role and runs somewhere else — an operator's laptop, a monitoring
+# box — because a probe that shares a host with the agent it measures cannot
+# measure the network between them. At the moment the joined state becomes
+# true, the two facts sit on opposite sides of a path that is broken; that is
+# what the state *is*. A probe that could ask the agent how it feels would not
+# be red, and an agent that could see the probe's verdict would already know it
+# was unreachable.
+#
+# So the join is computed here, in the one place that holds both series, and
+# postern's job is to make them joinable without asking anyone to hand-write
+# the key. Both halves carry host_id — the identity enrollment issued, already
+# present in the host's standalone config and in every operator's client
+# config:
+#
+#   postern_agent_info{version, host_id}            from the agent
+#   postern_probe_target_info{host, host_id}        from the probe
+#
+# Everything below is a group_left onto one of those two.
+#
+# Both targets are up in the state that matters. The mesh working while the
+# break-glass path has rusted shut is precisely the scenario: Prometheus can
+# still scrape the agent, the probe is on a box of its own, and the two
+# disagree. A target that is genuinely down is a different alert, and the last
+# rule in this file is it.
+
+groups:
+  - name: postern-health-is-the-join
+    interval: 30s
+    rules:
+      # The agent's own verdict, re-keyed onto host_id. The health gauge does
+      # not carry the key — one identity label per family would be smeared
+      # across the whole namespace — so postern_agent_info carries it and this
+      # rule moves it across. Both halves of Daemon.Health are folded together
+      # first: either one red is a red agent.
+      - record: postern:agent_healthy:host_id
+        expr: |
+          max by (host_id) (
+            max without (source) (postern_agent_health_red)
+              * on (job, instance) group_left (host_id) postern_agent_info
+          ) == bool 0
+
+      # The probe's verdict for the same host. postern_probe_health is an
+      # enumeration with a series for every state on every host, so
+      # state="red" is 0 on a healthy host rather than absent — which is what
+      # makes this safe to compare against 1 instead of merely "existing".
+      - record: postern:probe_red:host_id
+        expr: |
+          max by (host_id) (
+            postern_probe_health{state="red"}
+              * on (job, instance, host) group_left (host_id) postern_probe_target_info
+          )
+
+      # The join. 1 for every host whose agent says it is fine and whose probe
+      # cannot reach it.
+      #
+      # This is the single alertable condition. It is a derived series and no
+      # postern process exports it, which is the honest shape: the fact is a
+      # relation between two observations made from two places, and Prometheus
+      # is the first thing in the system that holds both.
+      - record: postern:health_join_red:host_id
+        expr: |
+          (postern:probe_red:host_id == 1)
+            and on (host_id) (postern:agent_healthy:host_id == 1)
+
+  - name: postern-alerts
+    rules:
+      # The alert design section 8 asks for, by name.
+      - alert: PosternBreakGlassDoorIsUseless
+        expr: postern:health_join_red:host_id == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: >-
+            postern agent on host_id {{ $labels.host_id }} reports itself healthy while the external
+            probe cannot reach it
+          description: >-
+            The agent's self-attestation is green and the canary sweep has failed its threshold. The
+            agent cannot see this: everything it reports about itself is self-attestation, and a
+            provider firewall, a dropped SPA datagram, or a NAT change in front of the host is
+            invisible from inside it. This is the state that makes the break-glass door useless on the
+            day it is needed. Check postern_probe_sweeps_total's reason label first —
+            gate_not_closed means the host has no drop rule at all, gate_not_opened means the path in
+            is broken.
+
+      # Three consecutive failures is red whatever the agent says, including
+      # when the agent's own target is down and there is no join to make.
+      - alert: PosternProbeCannotReachHost
+        expr: postern_probe_health{state="red"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: postern probe cannot reach {{ $labels.host }}
+          description: >-
+            The canary sweep has failed its consecutive-failure threshold. Independent of anything
+            postern says about itself.
+
+      # Absence is a signal. A probe that has stopped sweeping renders as a
+      # green host forever if nothing watches for it — which is the cached
+      # green design section 8 refuses, wearing a metric.
+      - alert: PosternProbeHasStoppedProvingReachability
+        expr: |
+          time() - max by (host) (postern_probe_last_pass_timestamp_seconds) > 900
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: postern has not proven {{ $labels.host }} reachable in over 15 minutes
+          description: >-
+            The default sweep interval is 137s and three failures turn a host red at roughly seven
+            minutes, so fifteen minutes without a passing sweep means either the probe has stopped or
+            nobody has been told it is failing. A host that has never passed reports 0 here, which
+            reads as an age of decades — that is the correct alarm, not a bug.
+
+      # The SPA port is closed on an agent that believes it is fine.
+      #
+      # This is not the join — it needs no probe and no second target, because
+      # the agent can see it from where it stands, once it looks at the effect
+      # of its own write instead of its return code. It is here because it is
+      # the failure that hid behind a green renewal counter for the whole life
+      # of this project: postern_agent_up_renewals_total{result="ok"} climbing
+      # while the dead-man element lapsed on a fixed clock.
+      #
+      # 0 means the element is absent, which is why this compares the gauge
+      # rather than an age: a missing element and an expired one are the same
+      # emergency and must alert identically.
+      - alert: PosternSPAPortIsClosed
+        expr: postern_agent_up_expires_timestamp_seconds - time() <= 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: postern's SPA port is closed on an agent that reports itself healthy
+          description: >-
+            The agent_up dead-man element has lapsed or is absent, so the kernel is dropping every
+            knock before postern sees it. No counter moves and no log line is written when this
+            happens: it looks exactly like a dead agent, a provider firewall, and a NAT change. The
+            agent's own health may well be green, because a renewal that succeeds and changes nothing
+            returns no error.

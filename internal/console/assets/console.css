@@ -1,0 +1,568 @@
+/* postern console.
+ *
+ * Every colour, size and step is a custom property declared once at :root and
+ * redeclared for the dark scheme; nothing below the token blocks names a raw
+ * colour. Semantic state (ok / warn / bad) is its own set of tokens and never
+ * borrows the accent, so a page can carry an accent and still say nothing
+ * about how a host is doing.
+ *
+ * The whole interface is set in the system monospace face. Versions, ports,
+ * durations, addresses and byte counts are what these pages are made of, and
+ * they are read down a column.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --bg: #f2f4f5;
+  --panel: #ffffff;
+  --sunken: #e8ebed;
+  --hover: #f0f3f5;
+  --line: #d8dde1;
+  --line-strong: #b3bcc3;
+  --ink: #14181b;
+  --ink-dim: #576169;
+  --ink-faint: #838d95;
+
+  --accent: #1d5b96;
+  --accent-ink: #ffffff;
+  --accent-hover: #17497a;
+
+  --ok: #0e6a4b;
+  --ok-bg: #e2f0ea;
+  --ok-line: #a9d2c1;
+  --warn: #855100;
+  --warn-bg: #f8eed8;
+  --warn-line: #ddc189;
+  --bad: #a01f21;
+  --bad-bg: #f9e4e3;
+  --bad-line: #e0adab;
+
+  --input-bg: #ffffff;
+
+  --fs-micro: 0.6875rem;
+  --fs-small: 0.75rem;
+  --fs-data: 0.8125rem;
+  --fs-base: 0.875rem;
+  --fs-page: 1.25rem;
+  --fs-stat: 1.625rem;
+
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+
+  --r: 2px;
+  --stripe: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1113;
+    --panel: #15191c;
+    --sunken: #1b2024;
+    --hover: #1c2226;
+    --line: #262d32;
+    --line-strong: #3a444c;
+    --ink: #dfe5e9;
+    --ink-dim: #98a3ac;
+    --ink-faint: #6d777f;
+
+    --accent: #6ea8e0;
+    --accent-ink: #0b0f12;
+    --accent-hover: #8dbdea;
+
+    --ok: #5cc79c;
+    --ok-bg: #0f2620;
+    --ok-line: #235143;
+    --warn: #d9a743;
+    --warn-bg: #2a2110;
+    --warn-line: #574421;
+    --bad: #f0736c;
+    --bad-bg: #2c1717;
+    --bad-line: #59302e;
+
+    --input-bg: #101518;
+  }
+}
+
+/* ---- base ---- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  font-variant-ligatures: none;
+  overflow-x: hidden;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--accent-hover); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 1px;
+}
+
+p { margin: 0 0 var(--s2); }
+
+code {
+  font-family: inherit;
+  font-size: var(--fs-data);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0 var(--s1);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: var(--s2);
+  top: -3rem;
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  padding: var(--s1) var(--s2);
+  font-size: var(--fs-small);
+}
+.skip:focus { top: var(--s2); }
+
+.num { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.path { overflow-wrap: anywhere; }
+.muted { color: var(--ink-dim); }
+.none { color: var(--ink-faint); }
+
+.k {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+/* ---- top bar ---- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s2) var(--s4);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.brand span {
+  color: var(--ink-faint);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  margin-left: var(--s2);
+}
+
+.topbar nav { display: flex; gap: var(--s4); }
+.topbar nav a {
+  color: var(--ink-dim);
+  text-decoration: none;
+  font-size: var(--fs-small);
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+}
+.topbar nav a:hover { color: var(--ink); }
+.topbar nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- key rail ---- */
+
+.keyrail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: var(--s2);
+  padding: var(--s3) var(--s4) 0;
+  max-width: 84rem;
+  margin: 0 auto;
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: var(--stripe) solid var(--ink-faint);
+  border-radius: var(--r);
+  padding: var(--s2) var(--s3);
+}
+.key.is-ok { border-left-color: var(--ok); }
+
+.key-head { display: flex; align-items: center; gap: var(--s2); }
+.key-slot { font-size: var(--fs-small); letter-spacing: 0.06em; text-transform: uppercase; }
+.key-left { font-size: var(--fs-micro); color: var(--ink-dim); }
+
+.dot {
+  width: 7px; height: 7px;
+  background: var(--ink-faint);
+  display: inline-block;
+}
+.key.is-ok .dot { background: var(--ok); }
+
+.key-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  font-size: var(--fs-micro);
+  color: var(--ink-dim);
+  min-width: 0;
+  flex: 1 1 8rem;
+}
+.key-meta .who { color: var(--ink); }
+.key-meta .path { color: var(--ink-faint); }
+
+.key-form { display: flex; gap: var(--s2); margin-left: auto; }
+.key-form input { width: 11rem; }
+
+/* ---- page frame ---- */
+
+main {
+  max-width: 84rem;
+  margin: 0 auto;
+  padding: var(--s4) var(--s4) var(--s6);
+}
+
+h1.page {
+  font-size: var(--fs-page);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: var(--s3) 0 var(--s3);
+}
+
+.hosthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+.hosthead h1.page { margin-bottom: var(--s3); }
+
+.reason { font-size: var(--fs-small); color: var(--bad); margin-top: calc(-1 * var(--s2)); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s3) var(--s4) var(--s4);
+  margin: 0 0 var(--s4);
+}
+
+.panel h2 {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-dim);
+  margin: 0 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.h-sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink-faint);
+  margin-left: var(--s2);
+}
+
+.empty { color: var(--ink-dim); font-size: var(--fs-data); margin: 0; max-width: 92ch; }
+
+/* ---- source strip ---- */
+
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  margin: 0 0 var(--s4);
+  padding: var(--s2) var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.sources > div { min-width: 0; }
+.sources dt {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+.sources dd {
+  margin: 0;
+  font-size: var(--fs-data);
+  overflow-wrap: anywhere;
+}
+
+/* ---- summary tiles ---- */
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  list-style: none;
+  margin: 0 0 var(--s4);
+  padding: 0;
+}
+
+.stat {
+  flex: 1 1 7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s2) var(--s3) var(--s3);
+}
+.stat-n {
+  font-size: var(--fs-stat);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-k {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-dim);
+}
+.stat.is-warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.stat.is-warn .stat-n { color: var(--warn); }
+.stat.is-warn .stat-k { color: var(--warn); }
+.stat.is-bad { background: var(--bad-bg); border-color: var(--bad-line); }
+.stat.is-bad .stat-n { color: var(--bad); }
+.stat.is-bad .stat-k { color: var(--bad); }
+
+/* ---- tables ---- */
+
+.tablewrap {
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.panel .tablewrap { border: 0; background: none; }
+
+table.grid {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-data);
+}
+/* Below this the columns would compress into a stack of wrapped fragments, so
+   the wrapper scrolls sideways instead. The page body never does. */
+.tablewrap > table.grid { min-width: 42rem; }
+
+table.grid th {
+  text-align: left;
+  vertical-align: bottom;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-dim);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.th-sub {
+  display: block;
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+}
+
+table.grid td {
+  vertical-align: top;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+table.grid tbody tr:last-child td { border-bottom: 0; }
+table.grid tbody tr:hover { background: var(--hover); }
+
+table.grid tbody td:first-child {
+  border-left: var(--stripe) solid transparent;
+}
+table.grid tbody tr.sev-ok td:first-child { border-left-color: var(--ok-line); }
+table.grid tbody tr.sev-warn td:first-child { border-left-color: var(--warn); }
+table.grid tbody tr.sev-bad td:first-child { border-left-color: var(--bad); }
+
+.c-host a { font-weight: 600; }
+.c-host .chips { margin-left: var(--s1); }
+
+table.pairs th {
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  width: 12rem;
+}
+
+/* ---- pills, chips ---- */
+
+.pill {
+  display: inline-block;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 var(--s1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.pill.is-ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
+.pill.is-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+.pill.is-bad { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }
+.pill.is-mute { color: var(--ink-faint); background: var(--sunken); }
+
+.chips { display: inline-flex; flex-wrap: wrap; gap: var(--s1); }
+.chip {
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  padding: 0 var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.chip.is-warn { color: var(--warn); border-color: var(--warn-line); }
+
+/* ---- flash ---- */
+
+.flash {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: var(--stripe) solid var(--ink-faint);
+  border-radius: var(--r);
+  padding: var(--s3);
+  margin: 0 0 var(--s4);
+}
+.flash.is-ok { border-left-color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+.flash.is-bad { border-left-color: var(--bad); background: var(--bad-bg); border-color: var(--bad-line); }
+.flash-title { font-weight: 600; margin: 0 0 var(--s1); }
+.flash-line { font-size: var(--fs-data); color: var(--ink-dim); margin: 0 0 var(--s1); max-width: 92ch; }
+.flash.is-ok .flash-line, .flash.is-bad .flash-line { color: inherit; }
+.flash-cmd { display: flex; align-items: baseline; gap: var(--s2); margin: var(--s1) 0 0; }
+
+/* ---- forms ---- */
+
+/* Fields are label over control over optional hint, so the row is aligned
+   from the top and the button is dropped by one label's height to sit on the
+   same line as the controls. Aligning from the bottom instead would lift any
+   field carrying a hint above the ones that do not. */
+.action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+}
+.action > .field ~ button { margin-top: 1.15rem; }
+.action > .pill { align-self: center; }
+.action:first-of-type { padding-top: 0; }
+.action + .action { border-top: 1px solid var(--line); }
+
+.field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.field-static { gap: var(--s1); }
+
+label, .field .label {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-dim);
+}
+.hint { font-size: var(--fs-micro); color: var(--ink-faint); }
+
+input, select, button {
+  font: inherit;
+  font-size: var(--fs-data);
+  color: inherit;
+  background: var(--input-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  padding: var(--s1) var(--s2);
+}
+input::placeholder { color: var(--ink-faint); }
+
+button {
+  background: var(--sunken);
+  cursor: pointer;
+  padding: var(--s1) var(--s3);
+  white-space: nowrap;
+}
+button:hover { background: var(--hover); border-color: var(--ink-faint); }
+button.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+button.is-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+/* ---- footer ---- */
+
+footer {
+  max-width: 84rem;
+  margin: 0 auto;
+  padding: var(--s3) var(--s4) var(--s6);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-small);
+  color: var(--ink-dim);
+}
+
+/* ---- narrow ---- */
+
+@media (max-width: 46rem) {
+  .topbar { flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2) var(--s3); }
+  .keyrail { grid-template-columns: 1fr; padding: var(--s3) var(--s3) 0; }
+  .key-head, .key-meta { flex: 1 1 100%; }
+  .key-form { margin-left: 0; width: 100%; }
+  .key-form input { flex: 1 1 auto; width: auto; }
+  main { padding: var(--s3) var(--s3) var(--s6); }
+  footer { padding: var(--s3) var(--s3) var(--s5); }
+  .stat { flex: 1 1 6rem; }
+  .action > .field, .action > button { flex: 1 1 100%; }
+  .action input, .action select { width: 100%; }
+}

@@ -1,0 +1,156 @@
+{{template "head" .}}
+{{with .Host}}
+<div class="hosthead">
+  <h1 class="page">{{.Name}}</h1>
+  {{if .Stale}}<span class="pill is-bad">bundle stale</span>{{else}}<span class="pill is-ok">bundle current</span>{{end}}
+  {{if .HasLive}}
+    {{if .Live.Healthy}}<span class="pill is-ok">live healthy</span>{{else}}<span class="pill is-bad">live unhealthy</span>{{end}}
+  {{else}}<span class="pill is-mute">never checked</span>{{end}}
+  <span class="chips">
+    {{range .Groups}}<span class="chip">{{.}}</span>{{end}}
+    {{if .ProviderFronted}}<span class="chip">provider-fronted</span>{{end}}
+    {{if not .Knockable}}<span class="chip is-warn">no client entry</span>{{end}}
+  </span>
+</div>
+{{if .Stale}}<p class="reason">{{.StaleReason}}</p>{{end}}
+
+<dl class="sources">
+  <div><dt>host_id</dt><dd class="path">{{.HostID}}</dd></div>
+  <div><dt>knock</dt><dd class="num">{{.KnockAddr}}</dd></div>
+  <div><dt>bundle</dt><dd class="num">{{if .HasSigned}}v{{.SignedVersion}} of v{{.InventoryVersion}}{{else}}<span class="muted">never signed, inventory at v{{.InventoryVersion}}</span>{{end}}</dd></div>
+  {{with .SSH}}<div><dt>ssh</dt><dd><code>{{.}}</code></dd></div>{{end}}
+  {{with .ConsoleURL}}<div><dt>provider</dt><dd class="path"><a href="{{.}}" rel="noreferrer noopener">{{.}}</a></dd></div>{{end}}
+</dl>
+
+<section class="panel">
+  <h2>actions</h2>
+  {{if .Knockable}}
+  <form method="post" action="/open" class="action">
+    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+    <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+    <input type="hidden" name="host" value="{{.Name}}">
+    <div class="field">
+      <label for="f-service">service</label>
+      {{$recovery := .RecoveryService}}
+      <select id="f-service" name="service">
+        {{range .ServiceNames}}<option value="{{.}}"{{if eq . $recovery}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-ttl">ttl</label>
+      <input type="text" id="f-ttl" name="ttl" inputmode="numeric" placeholder="120s">
+    </div>
+    <div class="field">
+      <label for="f-cidr">source CIDR</label>
+      <input type="text" id="f-cidr" name="source_cidr" placeholder="203.0.113.0/24">
+      <small class="hint">admits everyone behind the prefix</small>
+    </div>
+    <button type="submit" class="is-primary">open</button>
+  </form>
+
+  <form method="post" action="/status" class="action">
+    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+    <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+    <input type="hidden" name="host" value="{{.Name}}">
+    <div class="field field-static">
+      <span class="label">liveness</span>
+      <span class="hint">one signed ping and a connect to the recovery service</span>
+    </div>
+    <button type="submit">status</button>
+  </form>
+
+  <form method="post" action="/confirm" class="action">
+    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+    <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+    <input type="hidden" name="host" value="{{.Name}}">
+    <div class="field">
+      <label for="f-revision">revision</label>
+      <input type="text" id="f-revision" name="revision" inputmode="numeric" placeholder="12" required>
+    </div>
+    <div class="field">
+      <label for="f-nonce">nonce</label>
+      <input type="text" id="f-nonce" name="nonce" placeholder="32 hex characters" size="34" required>
+      <small class="hint">the agent prints both when it prepares the transaction</small>
+    </div>
+    <button type="submit">confirm</button>
+  </form>
+  {{else}}
+  <p class="empty">In the inventory, not in this machine's client config: nothing here can knock it.
+    Add it with <code>postern host add</code></p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>liveness <span class="h-sub">measured by this console</span></h2>
+  {{if .HasLive}}
+  <table class="grid pairs">
+    <tbody>
+      <tr>
+        <th>checked</th>
+        <td class="num">{{.LiveAge}} ago {{if .LiveCold}}<span class="chip is-warn">cold</span>{{end}}</td>
+      </tr>
+      <tr>
+        <th>pong</th>
+        <td>{{if .Live.Pong}}<span class="pill is-ok">ok</span> <span class="num muted">rtt {{.Live.PongRTT}}, host clock skew {{.Live.ClockSkew}}</span>
+          {{else}}<span class="pill is-bad">FAIL</span> <span class="muted">{{.Live.PongErr}}</span>{{end}}</td>
+      </tr>
+      <tr>
+        <th>recovery connect</th>
+        <td>{{if .Live.RecoveryService}}<span class="num">{{.Live.RecoveryService}}</span> <span class="muted">{{.Live.Recovery}}</span>
+          {{else}}<span class="none">no recovery_service configured</span>{{end}}</td>
+      </tr>
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">Nothing observed yet.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>services</h2>
+  <div class="tablewrap">
+  <table class="grid">
+    <thead>
+      <tr><th>name</th><th>kind</th><th>proto</th><th>ports</th><th>default ttl</th><th>max ttl</th><th>fail posture</th></tr>
+    </thead>
+    <tbody>
+    {{range .Services}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>{{.Kind}}</td>
+        <td>{{with .Proto}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td class="num">{{with .Ports}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td class="num">{{with .DefaultTTL}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td class="num">{{with .MaxTTL}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td>{{with .FailPosture}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>grants <span class="h-sub">as the compiled policy resolves them</span></h2>
+  <div class="tablewrap">
+  <table class="grid">
+    <thead>
+      <tr><th>operator</th><th>services</th><th>max ttl</th><th>asserted source</th><th>min v4</th><th>min v6</th></tr>
+    </thead>
+    <tbody>
+    {{range .Grants}}
+      <tr>
+        <td>{{.Operator}}</td>
+        <td>{{range $i, $s := .Services}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
+        <td class="num">{{with .MaxTTL}}{{.}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td>{{yesno .AllowSourceCIDR}}</td>
+        <td class="num">{{if .AllowSourceCIDR}}/{{.MinIPv4Prefix}}{{else}}<span class="none">—</span>{{end}}</td>
+        <td class="num">{{if .AllowSourceCIDR}}/{{.MinIPv6Prefix}}{{else}}<span class="none">—</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{end}}
+{{template "tail" .}}

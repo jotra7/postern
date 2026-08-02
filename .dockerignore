@@ -1,0 +1,10 @@
+# Keep scripts/linux-test.sh's build context small. The Dockerfile only
+# needs go.mod and go.sum to prime the module cache; none of this is used by
+# the image build, and excluding it keeps `docker build` fast as the repo
+# grows.
+.git
+.github
+.superpowers
+docs
+bin
+*.md

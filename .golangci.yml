@@ -1,0 +1,33 @@
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - bodyclose
+    - gosec
+  exclusions:
+    rules:
+      # spike/ is throwaway experiment code, judged on measurement correctness
+      # rather than production polish.
+      #
+      # Note this block lives under linters.exclusions — golangci-lint v2 moved
+      # it there, and the v1 `issues.exclude-rules` key parses without error
+      # while silently doing nothing.
+      - path: spike/
+        linters: [gosec, errcheck]
+      # Reading a path the caller supplied is the entire purpose of these
+      # functions, so G304 has nothing to warn about. Scoped to the identity
+      # key-file paths rather than disabled globally, so a genuine traversal
+      # risk elsewhere — a bundle path derived from network input, say — is
+      # still flagged.
+      - path: internal/identity/
+        text: "G304"
+        linters: [gosec]
+      # Same rationale as internal/identity/ above: the replay store's whole
+      # job is to open the caller-supplied durable log path.
+      - path: internal/replay/
+        text: "G304"
+        linters: [gosec]

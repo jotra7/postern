@@ -1,0 +1,93 @@
+{{template "head" .}}
+<h1 class="page">fleet</h1>
+
+{{with .Fleet.InventoryErr}}
+<div class="flash is-bad">
+  <p class="flash-title">the inventory could not be read</p>
+  <p class="flash-line">{{.}}</p>
+</div>
+{{end}}
+
+<dl class="sources">
+  <div><dt>inventory</dt><dd class="path">{{.Fleet.InventoryPath}}</dd></div>
+  {{if .Fleet.FleetID}}
+  <div><dt>fleet</dt><dd class="path">{{.Fleet.FleetID}}</dd></div>
+  <div><dt>version</dt><dd class="num">{{.Fleet.Version}}</dd></div>
+  {{end}}
+  <div><dt>bundles</dt><dd class="path">{{with .Fleet.OutDir}}{{.}}{{else}}<span class="muted">none</span>{{end}}</dd></div>
+  <div><dt>hub</dt><dd class="path">{{with .Fleet.HubURL}}{{.}}{{else}}<span class="muted">none</span>{{end}}</dd></div>
+</dl>
+
+{{if .Fleet.Hosts}}
+<ul class="stats">
+  <li class="stat"><span class="stat-n">{{len .Fleet.Hosts}}</span><span class="stat-k">hosts</span></li>
+  <li class="stat{{if .Fleet.StaleCount}} is-bad{{end}}"><span class="stat-n">{{.Fleet.StaleCount}}</span><span class="stat-k">behind</span></li>
+  <li class="stat{{if .Fleet.UnhealthyCount}} is-bad{{end}}"><span class="stat-n">{{.Fleet.UnhealthyCount}}</span><span class="stat-k">unhealthy</span></li>
+  <li class="stat"><span class="stat-n">{{.Fleet.UncheckedCount}}</span><span class="stat-k">never checked</span></li>
+  <li class="stat{{if .Fleet.UnknockableCount}} is-warn{{end}}"><span class="stat-n">{{.Fleet.UnknockableCount}}</span><span class="stat-k">no client entry</span></li>
+</ul>
+
+{{/* One button re-measures every host's liveness — the same two assertions
+     the per-host status control runs, run across the fleet. The checkbox is
+     an opt-in to re-running it on a timer; console.js drives it, and the
+     server does nothing with it. */}}
+<form method="post" action="/status-all" class="action">
+  <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+  <input type="hidden" name="return_to" value="/">
+  <button type="submit">sweep liveness</button>
+  <label><input type="checkbox" id="auto-sweep"> auto refresh every 30s</label>
+</form>
+
+<div class="tablewrap">
+<table class="grid">
+  <thead>
+    <tr>
+      <th>host</th>
+      <th>knock</th>
+      <th>signed<span class="th-sub">on file / inventory</span></th>
+      <th>hub</th>
+      <th>liveness<span class="th-sub">measured by this console</span></th>
+      <th>bundle plane</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Fleet.Hosts}}
+    <tr class="{{if or .Stale (and .HasLive (not .Live.Healthy))}}sev-bad{{else if or (not .Knockable) .LiveCold}}sev-warn{{else}}sev-ok{{end}}">
+      <td class="c-host">
+        <a href="/host/{{.Name}}">{{.Name}}</a>
+        <span class="chips">
+          {{range .Groups}}<span class="chip">{{.}}</span>{{end}}
+          {{if not .Knockable}}<span class="chip is-warn">no client entry</span>{{end}}
+        </span>
+      </td>
+      <td class="num">{{.KnockAddr}}</td>
+      <td>
+        {{if .HasSigned}}<span class="num">v{{.SignedVersion}}</span> <span class="num muted">of v{{.InventoryVersion}}</span>
+        {{else}}<span class="pill is-bad">never signed</span>{{end}}
+      </td>
+      <td>
+        {{if not .Hub.Queried}}<span class="none">—</span>
+        {{else if .Hub.Err}}<span class="pill is-bad">error</span> <span class="muted">{{.Hub.Err}}</span>
+        {{else if .Hub.Serving}}<span class="pill is-ok">serving</span> <span class="num muted">{{.Hub.Bytes}} B</span>
+        {{else}}<span class="pill is-bad">not serving</span>{{end}}
+      </td>
+      <td>
+        {{if .HasLive}}
+          {{if .Live.Healthy}}<span class="pill is-ok">healthy</span>{{else}}<span class="pill is-bad">unhealthy</span>{{end}}
+          <span class="num muted">{{.LiveAge}} ago</span>
+          {{if .LiveCold}}<span class="chip is-warn">cold</span>{{end}}
+        {{else}}<span class="pill is-mute">never checked</span>{{end}}
+      </td>
+      <td>
+        {{if .Stale}}<span class="pill is-bad">stale</span> <span class="muted">{{.StaleReason}}</span>
+        {{else}}<span class="pill is-ok">current</span>{{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else if not .Fleet.InventoryErr}}
+<p class="empty">The inventory declares no hosts.</p>
+{{end}}
+{{template "tail" .}}

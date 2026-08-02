@@ -1,0 +1,331 @@
+# promtool unit tests for dashboards/rules.yml. Run by scripts/promtool-test.sh.
+#
+# This file exists because "the join is correct" was the one load-bearing claim
+# in M1 resting on reading rather than running. Go tests can prove that every
+# metric the rules name is exported and that the dashboard reads a rule that is
+# recorded; they cannot prove the expressions mean what they say. promtool can:
+# it feeds synthetic series through the real rule evaluator.
+#
+# The cases are named in the feature's own terms rather than in PromQL's,
+# because what is under test is a claim about break-glass access, not a claim
+# about vector matching.
+
+rule_files:
+  - rules.yml
+
+evaluation_interval: 30s
+
+tests:
+  # ------------------------------------------------------------------
+  - name: a healthy agent the probe can reach is not the join's red state
+    interval: 30s
+    input_series:
+      - series: 'postern_agent_info{job="postern-agent",instance="web-01:9873",version="1.2.3",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="agent_up"}'
+        values: "0x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="standing"}'
+        values: "0x40"
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-01",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="green"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="red"}'
+        values: "0x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="amber"}'
+        values: "0x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="unknown"}'
+        values: "0x40"
+    promql_expr_test:
+      # Both halves are keyed, and both say the same thing.
+      - expr: postern:agent_healthy:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:agent_healthy:host_id",host_id="a1b2"}'
+            value: 1
+      - expr: postern:probe_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:probe_red:host_id",host_id="a1b2"}'
+            value: 0
+      # And the join is empty, which is what the dashboard's `or vector(0)`
+      # turns into a zero rather than into "No data".
+      - expr: postern:health_join_red:host_id
+        eval_time: 10m
+        exp_samples: []
+      - expr: count(postern:health_join_red:host_id == 1) or vector(0)
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 0
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PosternBreakGlassDoorIsUseless
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: PosternProbeCannotReachHost
+        exp_alerts: []
+
+  # ------------------------------------------------------------------
+  # The state design section 8 exists for. The agent's own report is green and
+  # would reassure anyone reading it; the probe, from somewhere else, cannot
+  # get in. This is the case the whole feature is built around.
+  - name: an agent that says it is healthy while the probe cannot reach it is red and alerts
+    interval: 30s
+    input_series:
+      - series: 'postern_agent_info{job="postern-agent",instance="web-01:9873",version="1.2.3",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="agent_up"}'
+        values: "0x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="standing"}'
+        values: "0x40"
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-01",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="green"}'
+        values: "0x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="red"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="amber"}'
+        values: "0x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="unknown"}'
+        values: "0x40"
+    promql_expr_test:
+      - expr: postern:agent_healthy:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:agent_healthy:host_id",host_id="a1b2"}'
+            value: 1
+      - expr: postern:probe_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:probe_red:host_id",host_id="a1b2"}'
+            value: 1
+      # The join. One series, one host, carrying the key that identifies it.
+      - expr: postern:health_join_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:health_join_red:host_id",host_id="a1b2"}'
+            value: 1
+      - expr: count(postern:health_join_red:host_id == 1) or vector(0)
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PosternBreakGlassDoorIsUseless
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              host_id: a1b2
+            exp_annotations:
+              summary: >-
+                postern agent on host_id a1b2 reports itself healthy while the external probe cannot
+                reach it
+              description: >-
+                The agent's self-attestation is green and the canary sweep has failed its threshold.
+                The agent cannot see this: everything it reports about itself is self-attestation, and
+                a provider firewall, a dropped SPA datagram, or a NAT change in front of the host is
+                invisible from inside it. This is the state that makes the break-glass door useless on
+                the day it is needed. Check postern_probe_sweeps_total's reason label first —
+                gate_not_closed means the host has no drop rule at all, gate_not_opened means the path
+                in is broken.
+
+  # ------------------------------------------------------------------
+  # An agent that admits it is red is already alerting on its own. The join is
+  # deliberately silent here: its whole subject is the disagreement, and a join
+  # that also fired when both sides agree would be a second copy of an alert
+  # that already exists, on a rule nobody would trust to mean what it says.
+  - name: an agent that says it is red does not produce the join alert, only the probe's own
+    interval: 30s
+    input_series:
+      - series: 'postern_agent_info{job="postern-agent",instance="web-01:9873",version="1.2.3",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="agent_up"}'
+        values: "0x40"
+      # The standing half alone is enough to make the agent not-healthy. Both
+      # halves are folded together on purpose: a successful renewal clears
+      # agent_up and must not clear this one.
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="standing"}'
+        values: "1x40"
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-01",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="red"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="green"}'
+        values: "0x40"
+    promql_expr_test:
+      - expr: postern:agent_healthy:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:agent_healthy:host_id",host_id="a1b2"}'
+            value: 0
+      - expr: postern:health_join_red:host_id
+        eval_time: 10m
+        exp_samples: []
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PosternBreakGlassDoorIsUseless
+        exp_alerts: []
+      # But the host is still unreachable, and somebody is still woken up.
+      - eval_time: 15m
+        alertname: PosternProbeCannotReachHost
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: postern-probe
+              instance: mon-01:9874
+              host: web-01
+              state: red
+            exp_annotations:
+              summary: postern probe cannot reach web-01
+              description: >-
+                The canary sweep has failed its consecutive-failure threshold. Independent of anything
+                postern says about itself.
+
+  # ------------------------------------------------------------------
+  # When the agent's target is down there is no self-report to disagree with,
+  # so there is nothing to join and the join must not invent one. The probe's
+  # own alert still fires, which is the correct division of labour: absence of
+  # the agent is a scrape-target problem and postern is not the thing that
+  # should be reporting it.
+  - name: an agent whose target is down produces no join, and the probe alerts alone
+    interval: 30s
+    input_series:
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-01",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="red"}'
+        values: "1x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="green"}'
+        values: "0x40"
+    promql_expr_test:
+      - expr: postern:agent_healthy:host_id
+        eval_time: 10m
+        exp_samples: []
+      - expr: postern:probe_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:probe_red:host_id",host_id="a1b2"}'
+            value: 1
+      - expr: postern:health_join_red:host_id
+        eval_time: 10m
+        exp_samples: []
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PosternBreakGlassDoorIsUseless
+        exp_alerts: []
+
+  # ------------------------------------------------------------------
+  # Two hosts, one probe process. The join has to key each half to the right
+  # host: a rule that matched on job and instance alone would pair the probe's
+  # series with whichever agent happened to sort first, and would report the
+  # healthy host as red and the red one as healthy.
+  - name: the join pairs each probe verdict with its own agent, not with any agent
+    interval: 30s
+    input_series:
+      - series: 'postern_agent_info{job="postern-agent",instance="web-01:9873",version="1.2.3",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="agent_up"}'
+        values: "0x40"
+      - series: 'postern_agent_info{job="postern-agent",instance="web-02:9873",version="1.2.3",host_id="c3d4"}'
+        values: "1x40"
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-02:9873",source="agent_up"}'
+        values: "0x40"
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-01",host_id="a1b2"}'
+        values: "1x40"
+      - series: 'postern_probe_target_info{job="postern-probe",instance="mon-01:9874",host="web-02",host_id="c3d4"}'
+        values: "1x40"
+      # web-01 is reachable; web-02 is not.
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-01",state="red"}'
+        values: "0x40"
+      - series: 'postern_probe_health{job="postern-probe",instance="mon-01:9874",host="web-02",state="red"}'
+        values: "1x40"
+    promql_expr_test:
+      - expr: postern:probe_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:probe_red:host_id",host_id="a1b2"}'
+            value: 0
+          - labels: '{__name__="postern:probe_red:host_id",host_id="c3d4"}'
+            value: 1
+      # Exactly one host is red, and it is the right one.
+      - expr: postern:health_join_red:host_id
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="postern:health_join_red:host_id",host_id="c3d4"}'
+            value: 1
+
+  # ------------------------------------------------------------------
+  # Absence is a signal. A probe that has stopped sweeping leaves a green
+  # dashboard behind it, which is design section 8's cached green wearing a
+  # metric.
+  - name: a probe that has stopped proving reachability is itself an alert
+    interval: 1m
+    input_series:
+      - series: 'postern_probe_last_pass_timestamp_seconds{job="postern-probe",instance="mon-01:9874",host="web-01"}'
+        values: "60x40"
+    alert_rule_test:
+      # promtool's clock starts at the unix epoch, so time() at 30m is 1800 and
+      # the last pass was at 60: 1740 seconds stale, well past the bound.
+      - eval_time: 30m
+        alertname: PosternProbeHasStoppedProvingReachability
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              host: web-01
+            exp_annotations:
+              summary: postern has not proven web-01 reachable in over 15 minutes
+              description: >-
+                The default sweep interval is 137s and three failures turn a host red at roughly seven
+                minutes, so fifteen minutes without a passing sweep means either the probe has stopped
+                or nobody has been told it is failing. A host that has never passed reports 0 here,
+                which reads as an age of decades — that is the correct alarm, not a bug.
+      # Ten minutes in, time() is 600 and the last pass was at 60: 540 seconds
+      # stale, inside the bound. The alert has to be quiet here or it is not
+      # measuring staleness at all.
+      - eval_time: 10m
+        alertname: PosternProbeHasStoppedProvingReachability
+        exp_alerts: []
+
+  # ------------------------------------------------------------------
+  # The failure that hid behind a green renewal counter. No probe involved:
+  # the agent can see this from where it stands, once it reads back the effect
+  # of its own write instead of its return code.
+  - name: an agent whose dead-man element has lapsed alerts even though it reports itself healthy
+    interval: 30s
+    input_series:
+      # Healthy by every signal the agent had before the read-back existed.
+      - series: 'postern_agent_health_red{job="postern-agent",instance="web-01:9873",source="agent_up"}'
+        values: "0x40"
+      # ...and the SPA port is shut. 0 is the "element is absent" encoding.
+      - series: 'postern_agent_up_expires_timestamp_seconds{job="postern-agent",instance="web-01:9873"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PosternSPAPortIsClosed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: postern-agent
+              instance: web-01:9873
+            exp_annotations:
+              summary: postern's SPA port is closed on an agent that reports itself healthy
+              description: >-
+                The agent_up dead-man element has lapsed or is absent, so the kernel is dropping every
+                knock before postern sees it. No counter moves and no log line is written when this
+                happens: it looks exactly like a dead agent, a provider firewall, and a NAT change.
+                The agent's own health may well be green, because a renewal that succeeds and changes
+                nothing returns no error.
+
+  # ------------------------------------------------------------------
+  - name: a live dead-man lease does not alert
+    interval: 30s
+    input_series:
+      # promtool's clock starts at the epoch, so a lease expiring at t=3000s is
+      # comfortably in the future throughout this test.
+      - series: 'postern_agent_up_expires_timestamp_seconds{job="postern-agent",instance="web-01:9873"}'
+        values: "3000x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PosternSPAPortIsClosed
+        exp_alerts: []

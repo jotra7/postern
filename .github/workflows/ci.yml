@@ -1,0 +1,37 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - run: go test ./... -race
+      - run: go vet ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      # gosec (enabled in .golangci.yml) is the only automated security
+      # control in this repo, so it needs to run on every push rather than
+      # rely on a contributor remembering `make lint` locally.
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      # Short run on every push; the corpus does the heavy lifting.
+      - run: go test ./internal/spa/ -run=Fuzz -fuzz=FuzzParse -fuzztime=60s

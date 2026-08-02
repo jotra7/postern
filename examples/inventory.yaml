@@ -1,0 +1,124 @@
+# Worked fleet inventory for postern.
+#
+# `postern sign` compiles this into one signed, sealed bundle per host. It is
+# hand-edited and reviewed in diffs like any other file in this repository, and
+# it is never applied to a host directly: a host only ever runs the bundle it
+# pulled, verified, armed, and confirmed.
+#
+# Every key and the fleet_id below are placeholder bytes, not real material.
+# Mint a real operator identity with `postern operator init`; each host's own
+# identity keys, rotation secret, and the fleet_id are produced by
+# `postern init-standalone` at enrollment.
+#
+# Two operators here look optional and are not. probe-01 holds the canary grant:
+# without it the canary service is configured and inert, and `postern probe` has
+# no identity permitted to knock it. liveness-peer-01 holds the liveness grant:
+# without a liveness grant no fail-closed service can arm at all, because arm-time
+# liveness has no identity permitted to knock it. Both gaps are the failure this
+# project exists to prevent, so the shipped example carries the grants that close
+# them. internal/config/inventory_test.go asserts exactly this.
+
+fleet_id: "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+version: 47
+
+# laptop-primary is the everyday operator and, here, also the bundle signer.
+# Understand what signing means before copying this: the signer's key signs the
+# policy every host applies, grants included, so whoever holds it can grant
+# themselves disarm in the next bundle and re-sign. The recovery-key split below
+# (laptop-primary knocks, recovery disarms) therefore protects nothing against a
+# stolen laptop while that same laptop is the signer. For the split to be worth
+# anything the signing key must live where the everyday operator is not: an
+# offline machine, a hardware token, a separate custody. postern does not enforce
+# this and deliberately does not refuse the arrangement, because bundle signing
+# is fleet-wide authority by design.
+bundle_signers: [laptop-primary]
+
+operators:
+  - name: laptop-primary
+    alg: ed25519+x25519
+    signing:    "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+    encryption: "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="
+    grants:
+      - hosts: ["*"]
+        services: ["ssh", "confirm", "liveness"]
+        max_ttl: 300s
+        allow_source_cidr: true
+        min_ipv4_prefix: 24
+        min_ipv6_prefix: 64
+  - name: recovery # granted disarm alone; generate this key once and keep it offline, not on the laptop you knock with day to day
+    alg: ed25519+x25519
+    signing:    "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk="
+    encryption: "CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo="
+    grants: [{ hosts: ["*"], services: ["disarm"], max_ttl: 300s }]
+  - name: probe-01
+    alg: ed25519+x25519
+    signing:    "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+    encryption: "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ="
+    grants: [{ hosts: ["*"], services: ["canary"], max_ttl: 30s }]
+  - name: liveness-peer-01 # the designated fleet peer; nothing else may knock liveness
+    alg: ed25519+x25519
+    signing:    "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="
+    encryption: "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY="
+    grants: [{ hosts: ["*"], services: ["liveness"], max_ttl: 30s }]
+
+breakglass_services: [ssh] # default fail_posture: open; every other gate is closed
+
+services:
+  ssh:      { kind: gate, proto: tcp, ports: [22],    default_ttl: 120s, max_ttl: 300s,
+              listener_expectation: present }
+  canary:   { kind: gate, proto: tcp, ports: [62202], default_ttl: 30s,  max_ttl: 60s,
+              listener_expectation: absent, verification: tcp_rst }
+  admin:    { kind: gate, proto: tcp, ports: [8443],  default_ttl: 600s, max_ttl: 1800s,
+              listener_expectation: unchecked }
+  confirm:  { kind: action }
+  disarm:   { kind: action }
+  liveness: { kind: action }
+
+defaults:
+  # Rotation is the fleet default. Each host's secret is generated per host at
+  # enrollment and is never shared, so the fleet never presents the same knock
+  # port at the same instant. window is how long a port stays current; range is
+  # the inclusive UDP band it draws from, sitting below the kernel ephemeral
+  # range. A rotation host should run NTP: the knock is time-derived, gets no
+  # reply to correct skew, and the neighbor-window overlap tolerates only about
+  # one window (ten minutes here). Set `port_rotation: disabled` and a spa_port
+  # on a host that must use a fixed port (see web-01 below).
+  port_rotation: { window: 600s, range: 20000-30000 }
+  spa_port: 62201 # the fixed knock port a fixed-mode host uses; ignored where rotation is on
+  # spa_http_port: 62443 # optional TCP carrier for the SPA packet, for a host behind a
+  #                        UDP-blocking path. 0 (the default) disables it. A host that runs
+  #                        the carrier MUST set this in the inventory: the agent refuses any
+  #                        bundle that would move the carrier port, which would stop it pulling.
+  always_allow_iface: tailscale0 # the mesh interface no rule may drop; the recovery path
+  recovery_service: ssh # arm-time liveness TCP-connects to this over the always-allow path
+  freshness_window: 60s # availability: how far a knock's timestamp may lag
+  freshness_window_max: 24h # security: the replay bound
+
+hosts:
+  - name: app-01
+    host_id: "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b" # random, immutable, generated at enrollment
+    knock_addr: 198.51.100.20 # the address operators send SPA packets to; an IP literal, never a name
+    ssh: { host: app-01.example.com, user: ops }
+    host_identity:
+      alg: ed25519+x25519
+      signing:    "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws="
+      encryption: "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw="
+    services: [ssh, canary]
+    groups: [prod]
+
+  - name: web-01
+    host_id: "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a"
+    knock_addr: 203.0.113.9 # origin address; DNS is proxied and resolves to a CDN edge
+    port_rotation: disabled # opt this host out of the fleet's rotating port; it needs spa_port below
+    spa_port: 62210 # knock this host on its own fixed UDP port instead of defaults.spa_port.
+    #                 The compiled bundle and the client entry both record it, so `postern open`
+    #                 and the console knock the right port with no extra flags.
+    ssh: { host: web-01.example.com, user: ops }
+    host_identity:
+      alg: ed25519+x25519
+      signing:    "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+      encryption: "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg="
+    services: [ssh, canary]
+    groups: [prod, cdn-fronted]
+    provider_fronted: true
+    console: "https://provider.example/instances/web-01/console"

@@ -1,0 +1,84 @@
+{{/*
+  Split into "head" and "tail" rather than one "layout" wrapping a "body",
+  because every page in this directory is parsed into one template namespace:
+  three files each defining "body" would leave whichever parsed last as the
+  definition all three of them rendered.
+*/}}
+{{define "head"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · postern</title>
+<link rel="stylesheet" href="/assets/console.css">
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="topbar">
+  <a class="brand" href="/">postern<span>console</span></a>
+  <nav>
+    <a href="/"{{if eq .Nav "fleet"}} aria-current="page"{{end}}>fleet</a>
+    <a href="/deploy"{{if eq .Nav "deploy"}} aria-current="page"{{end}}>sign &amp; deploy</a>
+  </nav>
+</header>
+
+{{template "keys" .}}
+
+<main id="main">
+{{with .Flash}}
+<div class="flash {{if .OK}}is-ok{{else}}is-bad{{end}}" role="status">
+  <p class="flash-title">{{.Title}}</p>
+  {{range .Lines}}<p class="flash-line">{{.}}</p>{{end}}
+  {{with .Next}}<p class="flash-cmd"><span class="k">next</span><code>{{.}}</code></p>{{end}}
+  {{with .Verify}}<p class="flash-cmd"><span class="k">verify</span><code>{{.}}</code></p>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "tail"}}
+</main>
+<footer>
+  <span class="k">disarm</span>
+  <span>needs the recovery key, which this console never loads:</span>
+  <code>{{.DisarmHint}}</code>
+</footer>
+<script src="/assets/console.js"></script>
+</body>
+</html>{{end}}
+
+{{define "keys"}}
+<section class="keyrail" aria-label="keys">
+  {{range .Slots}}
+  <div class="key {{if .Unlocked}}is-ok{{else}}is-locked{{end}}">
+    <div class="key-head">
+      <span class="dot"></span>
+      <span class="key-slot">{{.Slot}}</span>
+      <span class="pill {{if .Unlocked}}is-ok{{else}}is-mute{{end}}">{{if .Unlocked}}unlocked{{else}}locked{{end}}</span>
+      {{if .Unlocked}}<span class="num key-left">{{duration .ExpiresIn}} left</span>{{end}}
+    </div>
+    <div class="key-meta">
+      {{if .Unlocked}}<span class="who">{{.Operator}}</span>{{end}}
+      {{if .KeyFile}}<span class="path" title="{{.KeyFile}}">{{.KeyFile}}</span>
+      {{else}}<span class="path muted">no key file configured</span>{{end}}
+    </div>
+    {{if .Unlocked}}
+    <form method="post" action="/lock" class="key-form">
+      <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+      <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+      <input type="hidden" name="slot" value="{{.Slot}}">
+      <button type="submit">lock</button>
+    </form>
+    {{else}}
+    <form method="post" action="/unlock" class="key-form">
+      <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+      <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+      <input type="hidden" name="slot" value="{{.Slot}}">
+      <label class="sr-only" for="pass-{{.Slot}}">{{.Slot}} passphrase</label>
+      <input type="password" id="pass-{{.Slot}}" name="passphrase" placeholder="passphrase" autocomplete="off">
+      <button type="submit" class="is-primary">unlock</button>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}

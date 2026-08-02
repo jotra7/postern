@@ -1,0 +1,813 @@
+{
+  "title": "postern",
+  "uid": "postern-agent",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "tags": [
+    "postern",
+    "spa",
+    "break-glass"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "label": "Host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(postern_agent_info, instance)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Is the door there",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Time since the last successful open",
+      "description": "The 3am panel. postern_gate_last_open_timestamp_seconds moves only when a gate element was genuinely installed by the agent, after the firewall backend returned success. The SPA path never replies, so no client can prove the gate acted; this is the agent's own account of it. A host that has never opened one reports 0 here, which reads as a very large age and is the correct alarm.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 604800
+              },
+              {
+                "color": "red",
+                "value": 2592000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - postern_gate_last_open_timestamp_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Health is the join",
+      "description": "Hosts whose agent reports itself healthy while the external probe cannot reach it — design section 8's most valuable state, and the one that makes a break-glass door useless on the day it is needed. Computed by postern:health_join_red:host_id in dashboards/rules.yml, which must be loaded for this panel to have data: the probe is a client role and does not run on the host, so the two halves arrive from two scrape targets and are joined on the host_id enrollment issued. Anything above zero is a page.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(postern:health_join_red:host_id == 1) or vector(0)",
+          "legendFormat": "hosts the probe cannot reach that call themselves healthy",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Agent self-assessment",
+      "description": "The two halves are independent by construction: agent_up is the live renewal signal and goes green again the moment a renewal succeeds; standing is a condition — a reverted transaction, an unusable replay store — that a later successful renewal has no business clearing. inert means a global pre-arm precondition failed, so no gate can be opened and the SPA port is silent.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_agent_health_red{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} red ({{source}})"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_agent_inert{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} inert"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Gate state",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Sources currently admitted",
+      "description": "A count per service and per source kind. Deliberately not a list of addresses: which addresses are admitted through a break-glass gate is close to who is logged in from where, and a label per address would also be an unbounded series on a root daemon. An asserted source is an operator-supplied CIDR, so it is a wider hole than an observed one and is broken out for that reason.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_gate_open_sources{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} {{service}} ({{source_kind}})"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Services armed by pre-arm",
+      "description": "0 means pre-arm disabled exactly this service and left every other gate, the SPA listener and agent_up alone. A knock for a disabled service is refused by the agent rather than punched into rules that were never armed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_gate_service_armed{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} {{service}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Opens and open failures",
+      "description": "An authorized knock the firewall backend refused is a failed open: the operator got no reply either way, because the SPA path never sends one, so this panel is the only place that difference is visible.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, service) (increase(postern_gate_opens_total{instance=~\"$instance\"}[1h]))",
+          "legendFormat": "{{instance}} {{service}} opened"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, service) (increase(postern_gate_open_failures_total{instance=~\"$instance\"}[1h]))",
+          "legendFormat": "{{instance}} {{service}} FAILED"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "SPA",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "SPA rates",
+      "description": "Every datagram the packet loop finished with, split by outcome. A rising rate of undecryptable packets means the SPA port has been found; design section 8 counts these rather than logging one row each, because at the kernel's 20/second limit a record per rejection is roughly 1.7 million rows a day.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (rate(postern_spa_datagrams_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} handled"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, service) (rate(postern_spa_accepted_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} accepted {{service}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (rate(postern_spa_rejections_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "rejected: {{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Clock skew",
+      "description": "Difference between the host's clock and the timestamp inside an authenticated packet. The band between freshness_window (60s) and freshness_window_max (24h) is the one that matters: a host drifting in there keeps admitting gate packets, because the counter path carries them, and stops accepting actions entirely. The p99 line is the distribution; the signed line says which way.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 86400
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (instance, le) (rate(postern_spa_clock_skew_seconds_bucket{instance=~\"$instance\"}[1h])))",
+          "legendFormat": "{{instance}} p99 |skew|"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_spa_clock_skew_last_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} last (signed)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (rate(postern_spa_clock_skew_seconds_sum{instance=~\"$instance\"}[1h])) / sum by (instance) (rate(postern_spa_clock_skew_seconds_count{instance=~\"$instance\"}[1h]))",
+          "legendFormat": "{{instance}} mean |skew|"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Packets admitted by the counter path alone",
+      "description": "A gate packet whose timestamp was already outside freshness_window and which only the replay counter admitted. Non-zero here is a host whose clock has drifted past 60s but not past 24h — it still works, and nothing else in the system says so. Read alongside the too_old rejections, which are the same drift past the hard bound.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (increase(postern_spa_accepted_beyond_freshness_window_total{instance=~\"$instance\"}[1h]))",
+          "legendFormat": "{{instance}} counter path only"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (increase(postern_spa_rejections_total{instance=~\"$instance\",reason=\"too_old\"}[1h]))",
+          "legendFormat": "{{instance}} past freshness_window_max"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "agent_up renewals, and whether the SPA port is actually open",
+      "description": "The renewal counter says the call succeeded. The lease line says the call had an effect — they are not the same thing, and for a long time they disagreed silently: a re-add of a live element with an identical ttl is ignored by the kernel, so every renewal 'succeeded', the dead-man lapsed on a fixed clock, and the SPA port went silent while this dashboard stayed green. Seconds-until-silent at or below zero means no knock can reach the host right now.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, result) (rate(postern_agent_up_renewals_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} {{result}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - postern_agent_up_last_success_timestamp_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} age of last success"
+        },
+        {
+          "expr": "postern_agent_up_expires_timestamp_seconds{instance=~\"$instance\"} - time()",
+          "legendFormat": "seconds until the SPA port goes silent",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Probe and deploys",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Canary streak and the age of the last proof",
+      "description": "The probe's own view. reason is the distinction the exit code cannot draw: gate_not_closed means the canary port answers with no gate open — a host with no drop rule at all, which `postern open` reports as healthy — while gate_not_opened means the gate is shut and the knock did not reach it. A host that has never passed reports an age of decades here, on purpose.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "postern_probe_consecutive_failures",
+          "legendFormat": "{{host}} consecutive failures",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (host, reason) (increase(postern_probe_sweeps_total{verdict=\"fail\"}[1h]))",
+          "legendFormat": "{{host}} {{reason}}",
+          "refId": "B"
+        },
+        {
+          "expr": "time() - postern_probe_last_pass_timestamp_seconds",
+          "legendFormat": "{{host}} since last proof",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Probe verdict per host",
+      "description": "An enumeration, not a number: every state has a series on every host, so state=\"red\" is 0 on a healthy host rather than absent. That is what lets an alert tell a green host from a probe that has stopped reporting, and it is why unknown — nothing has ever been measured — cannot be read as a value on the same scale as green.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 30
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "postern_probe_health",
+          "legendFormat": "{{host}} {{state}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Confirm-or-revert",
+      "description": "An armed configuration reverts unless a bound confirm arrives before the deadline. A pending transaction that stays pending is a deploy nobody finished; a revert is a deploy that took the host somewhere it could not be confirmed from.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_transaction_pending{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} pending"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_transaction_deadline_timestamp_seconds{instance=~\"$instance\"} - time()",
+          "legendFormat": "{{instance}} seconds to the dead-man"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (increase(postern_transaction_reverts_total{instance=~\"$instance\"}[24h]))",
+          "legendFormat": "{{instance}} reverts"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "table",
+      "title": "Builds, uptime, and the join key",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_agent_info{instance=~\"$instance\"}",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - postern_agent_start_timestamp_seconds{instance=~\"$instance\"}",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "postern_probe_target_info",
+          "legendFormat": "probe target",
+          "refId": "C"
+        }
+      ],
+      "description": "host_id is what makes the probe's series and the agent's joinable without an operator hand-writing a matching label into their scrape config. It appears on postern_agent_info from the host and on postern_probe_target_info from the probe; if a host is missing from one of them, the join above silently covers fewer hosts than you think."
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Fleet bundle pull",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      }
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Bundle pulls: applied, rejected, and running version",
+      "description": "The hub is a management convenience: a rejection here means this host kept the last good policy it already had, never that the packet path stopped working. A rising rejections_total against a flat applied_total is a hub this fleet is not receiving updates from. applied_version is the version this host is actually running; a host stuck below the fleet's current version is refusing bundles, which a throttled rejection log alone would not surface.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (increase(postern_bundle_pull_applied_total{instance=~\"$instance\"}[24h]))",
+          "legendFormat": "{{instance}} applied"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, reason) (increase(postern_bundle_pull_rejections_total{instance=~\"$instance\"}[24h]))",
+          "legendFormat": "{{instance}} rejected: {{reason}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "postern_bundle_applied_version{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} running version"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "row",
+      "title": "Fleet heartbeat",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      }
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Heartbeats sent and rejected",
+      "description": "The hub is a management convenience: a rejection here means the hub does not currently have a fresh view of this host, never that the packet path stopped working. A rising rejections_total against a flat sent_total is a hub this host cannot currently reach.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (increase(postern_heartbeat_sent_total{instance=~\"$instance\"}[24h]))",
+          "legendFormat": "{{instance}} sent"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, reason) (increase(postern_heartbeat_rejections_total{instance=~\"$instance\"}[24h]))",
+          "legendFormat": "{{instance}} rejected: {{reason}}"
+        }
+      ]
+    }
+  ]
+}

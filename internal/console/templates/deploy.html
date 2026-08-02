@@ -1,0 +1,69 @@
+{{template "head" .}}
+<h1 class="page">sign &amp; deploy</h1>
+{{with .Plan}}
+
+{{with .Err}}
+<div class="flash is-bad">
+  <p class="flash-title">the plan could not be computed</p>
+  <p class="flash-line">{{.}}</p>
+</div>
+{{end}}
+{{if .Blocked}}
+<div class="flash is-bad">
+  <p class="flash-title">this run would be refused</p>
+  <p class="flash-line">{{.Reason}}</p>
+</div>
+{{end}}
+
+<dl class="sources">
+  <div><dt>inventory</dt><dd class="path">{{$.Fleet.InventoryPath}}</dd></div>
+  <div><dt>bundles</dt><dd class="path">{{with $.Fleet.OutDir}}{{.}}{{else}}<span class="muted">none</span>{{end}}</dd></div>
+  <div><dt>signs as</dt><dd>{{with .Signer}}{{.}}{{else}}<span class="muted">unresolved</span>{{end}}</dd></div>
+  <div><dt>at version</dt><dd class="num">{{.Version}}</dd></div>
+</dl>
+
+{{if .Changes}}
+<ul class="stats">
+  <li class="stat"><span class="stat-n">{{len .Changes}}</span><span class="stat-k">hosts</span></li>
+  <li class="stat{{if .New}} is-warn{{end}}"><span class="stat-n">{{.New}}</span><span class="stat-k">new</span></li>
+  <li class="stat{{if .Update}} is-warn{{end}}"><span class="stat-n">{{.Update}}</span><span class="stat-k">update</span></li>
+  <li class="stat"><span class="stat-n">{{.Unchanged}}</span><span class="stat-k">unchanged</span></li>
+  <li class="stat{{if .Broken}} is-bad{{end}}"><span class="stat-n">{{.Broken}}</span><span class="stat-k">will not compile</span></li>
+</ul>
+
+<div class="tablewrap">
+<table class="grid">
+  <thead>
+    <tr><th>host</th><th>knock</th><th>on file</th><th>would become</th><th>change</th><th>compiles</th></tr>
+  </thead>
+  <tbody>
+  {{range .Changes}}
+    <tr class="{{if .PolicyErr}}sev-bad{{else if eq .Action "unchanged"}}sev-ok{{else}}sev-warn{{end}}">
+      <td>{{.Host}}</td>
+      <td class="num">{{.Knock}}</td>
+      <td class="num">{{if .HasFrom}}v{{.From}}{{else}}<span class="none">—</span>{{end}}</td>
+      <td class="num">v{{.To}}</td>
+      <td><span class="pill {{if eq .Action "unchanged"}}is-mute{{else}}is-warn{{end}}">{{.Action}}</span></td>
+      <td>
+        {{if .PolicyErr}}<span class="pill is-bad">no</span> <span class="muted">{{.PolicyErr}}</span>
+        {{else}}<span class="pill is-ok">yes</span>{{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<section class="panel">
+  <h2>sign</h2>
+  <form method="post" action="/sign" class="action">
+    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+    <input type="hidden" name="return_to" value="/deploy">
+    <button type="submit" class="is-primary">compile, sign and write bundles</button>
+    {{if $.SignerUnlocked}}<span class="pill is-ok">signer unlocked</span>
+    {{else}}<span class="pill is-bad">signer locked</span>{{end}}
+  </form>
+</section>
+{{end}}
+{{template "tail" .}}
