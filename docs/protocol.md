@@ -138,7 +138,12 @@ captured on its way to one host is useless against any other. It then rejects a
 timestamp outside the freshness window, looks up the service, checks the operator
 holds a grant for it, and records the request id in the replay store before it
 acts. That record is written once, and only for a packet that passed every check
-above, so the same datagram cannot be used twice.
+above, so the same datagram cannot be used twice. The store is a file on disk,
+and the record is committed before the gate opens, so a restart or a crash
+between recording and acting does not reopen the window. An entry is retained
+until its packet is too old to pass the freshness check and then pruned, never
+sooner, since evicting it early would let the timestamp path accept the very
+datagram the record exists to refuse.
 
 ### No reply
 

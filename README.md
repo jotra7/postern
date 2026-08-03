@@ -63,8 +63,10 @@ The knock is one UDP datagram. Inside it is a 224-byte record: a 24-byte
 nonce and a 200-byte box sealed to the target host (X25519 / NaCl box) wrapping
 an Ed25519-signed inner record. The service name is never sent in the clear,
 only the first 16 bytes of its SHA-256. The agent trial-decrypts against each
-trusted operator, verifies, checks freshness, and records the request id so the
-same datagram cannot open a door twice.
+trusted operator, verifies, checks freshness, and records the request id in a
+replay store written to disk before the gate opens, so the same datagram cannot
+open a door twice, even across an agent restart. Each id is kept only until its
+packet is too old to pass the freshness window, then pruned.
 
 Two properties keep a passive observer from fingerprinting the knock:
 
@@ -176,7 +178,9 @@ postern controls *reachability*. It is not a VPN, not an SSH certificate
 authority, and not a replacement for the authentication of whatever it gates.
 Everything behind the gate stays exactly as hardened as it already is. The
 disarm grant is the power to strip postern off a host, so treat it as a master
-key and keep it on a separate key held offline.
+key and keep it on a separate key held offline. In an emergency it is the way
+back in when a fail-closed gate has locked you out, run from the host itself; see
+[`docs/operating.md`](docs/operating.md) for the disarm and recovery paths.
 
 ## Documentation
 
