@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/jotra7/postern/internal/bundle"
 	"github.com/jotra7/postern/internal/config"
 	"github.com/jotra7/postern/internal/identity"
+	"github.com/jotra7/postern/internal/knockport"
 )
 
 // signedIssuedAt is the fixed instant stamped into every bundle's issued_at,
@@ -25,10 +27,12 @@ var signedIssuedAt = time.Unix(0, 0).UTC()
 type DeployChange struct {
 	Host   string
 	HostID string
-	// Knock is the address:port an operator's knock is sent to for this host,
-	// resolved from its own spa_port if set and defaults.spa_port otherwise. It
-	// is surfaced so a per-host knock-port override is visible in the deploy
-	// preview before the run is signed.
+	// Knock is the address:port an operator's knock is sent to for this host.
+	// Under rotation it is the port the signed bundle's secret derives for the
+	// current window, so the preview shows where a knock lands rather than the
+	// fixed spa_port a rotation host never answers on. On a fixed-port host it
+	// is the host's own spa_port if set and defaults.spa_port otherwise, so a
+	// per-host override is still visible before the run is signed.
 	Knock string
 	// From is the version index.json currently records; HasFrom is false when
 	// this host has never been signed.
@@ -132,9 +136,18 @@ func (s *sources) planDeploy() DeployPlan {
 			c.Action = "unchanged"
 			p.Unchanged++
 		}
-		if _, err := bundle.Compile(inv, h.Name); err != nil {
+		// Compile once: it decides both whether the host is deployable and,
+		// under rotation, where a knock actually lands. h.KnockAddr carries the
+		// fixed spa_port, which a rotation host does not answer on, so show the
+		// port this bundle's secret derives for the current window instead, the
+		// same port the fleet view and the client compute.
+		if policy, err := bundle.Compile(inv, h.Name); err != nil {
 			c.PolicyErr = err.Error()
 			p.Broken++
+		} else if r := policy.PortRotation; r != nil {
+			w := knockport.Window(s.clock().Unix(), r.Window)
+			port := knockport.Port(r.Secret, w, r.RangeLo, r.RangeHi)
+			c.Knock = netip.AddrPortFrom(h.KnockAddr.Addr(), port).String()
 		}
 		p.Changes = append(p.Changes, c)
 	}
