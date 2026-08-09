@@ -2,20 +2,32 @@ name: ci
 on: [push, pull_request]
 
 jobs:
-  test:
+  # cmd/postern's end-to-end tests drive real nftables, so they run in the
+  # privileged container (scripts/linux-test.sh), but they are sequential CLI
+  # lifecycle flows rather than concurrent code. Running them without the race
+  # detector roughly halves this, the slowest package, and race coverage of the
+  # agent's goroutines lives in the `race` job below instead.
+  integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      # The agent and gate packages drive real nftables, so their tests only
-      # pass with root, CAP_NET_ADMIN, and nft(8) present. scripts/linux-test.sh
-      # supplies all three in a privileged, network-isolated container and runs
-      # the whole module serially (-p 1) so the fixed-name tables cannot clash.
-      # A bare `go test ./...` on the runner has none of that and cannot pass.
-      - run: ./scripts/linux-test.sh ./... -race
-      - run: go vet ./...
+      - run: ./scripts/linux-test.sh ./cmd/...
+
+  # Every internal package, with the race detector, in the same nftables
+  # container. This is where the agent's concurrency is, so -race earns its
+  # cost here. It runs in parallel with integration, so the two together finish
+  # in about the time the slower one takes rather than the sum of both.
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - run: ./scripts/linux-test.sh ./internal/... -race
 
   lint:
     runs-on: ubuntu-latest
@@ -26,7 +38,8 @@ jobs:
           go-version: '1.26'
       # gosec (enabled in .golangci.yml) is the only automated security
       # control in this repo, so it needs to run on every push rather than
-      # rely on a contributor remembering `make lint` locally.
+      # rely on a contributor remembering `make lint` locally. golangci-lint
+      # also runs govet, so a separate `go vet` step would be redundant.
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
