@@ -18,6 +18,14 @@ linters:
       # while silently doing nothing.
       - path: spike/
         linters: [gosec, errcheck]
+      # internal/vectors/gen is a maintainer-only codegen tool: it writes the
+      # conformance-vector fixture the shipped code is tested against, is a
+      # package main nothing imports, and never enters any binary. gosec's
+      # G301 (0755 output dir) and G115 (int->uint32 on the lengths of small,
+      # locally-built byte slices) are noise on a generator, not the shipped
+      # code, so it is scoped out the same way spike/ is.
+      - path: internal/vectors/gen/
+        linters: [gosec]
       # Reading a path the caller supplied is the entire purpose of these
       # functions, so G304 has nothing to warn about. Scoped to the identity
       # key-file paths rather than disabled globally, so a genuine traversal

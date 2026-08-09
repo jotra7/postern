@@ -9,7 +9,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - run: go test ./... -race
+      # The agent and gate packages drive real nftables, so their tests only
+      # pass with root, CAP_NET_ADMIN, and nft(8) present. scripts/linux-test.sh
+      # supplies all three in a privileged, network-isolated container and runs
+      # the whole module serially (-p 1) so the fixed-name tables cannot clash.
+      # A bare `go test ./...` on the runner has none of that and cannot pass.
+      - run: ./scripts/linux-test.sh ./... -race
       - run: go vet ./...
 
   lint:
