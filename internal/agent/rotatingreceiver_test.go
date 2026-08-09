@@ -32,6 +32,7 @@ func freePort(t *testing.T) uint16 {
 	if err := conn.Close(); err != nil {
 		t.Fatalf("freePort: close throwaway socket: %v", err)
 	}
+	//nolint:gosec // G115: an OS-assigned socket port is in [0,65535], within uint16.
 	return uint16(port)
 }
 

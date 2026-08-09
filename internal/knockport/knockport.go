@@ -43,6 +43,7 @@ func Port(secret []byte, window uint64, lo, hi uint16) uint16 {
 	sum := mac.Sum(nil)
 	span := uint32(hi) - uint32(lo) + 1
 	n := binary.BigEndian.Uint32(sum[0:4]) % span
+	//nolint:gosec // G115: n = x % span with span = hi-lo+1 <= 65536, so n < span and lo+n <= hi <= 65535, a valid uint16 port.
 	return lo + uint16(n)
 }
 
@@ -52,6 +53,7 @@ func Window(unixSeconds int64, period time.Duration) uint64 {
 	if secs <= 0 {
 		secs = 1
 	}
+	//nolint:gosec // G115: wall-clock seconds are non-negative, so the window index is non-negative and fits uint64.
 	return uint64(unixSeconds / secs)
 }
 

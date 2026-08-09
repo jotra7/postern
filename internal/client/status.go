@@ -223,6 +223,7 @@ func pingOnce(
 	// an operator confirming a rotation host without --force from a
 	// genuinely healthy mesh path would have failed here.
 	pingPort := o.Host.SPAPort()
+	//nolint:gosec // G115: a millisecond wall-clock timestamp divided by 1000 is far within int64.
 	if port, ok := o.Host.CurrentKnockPort(int64(sentAt / 1000)); ok {
 		pingPort = port
 	}

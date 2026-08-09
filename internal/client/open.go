@@ -224,6 +224,7 @@ func Open(ctx context.Context, o OpenOptions) (OpenReport, error) {
 	// Under rotation, one datagram to the current-window port. The HTTP carrier
 	// port is fixed, so this only applies to the UDP carrier; --carrier http keeps
 	// the resolved knockAddr from CarrierAddrPort above.
+	//nolint:gosec // G115: a millisecond wall-clock timestamp divided by 1000 is far within int64.
 	if port, ok := o.Host.CurrentKnockPort(int64(now / 1000)); ok && carrier == CarrierUDP {
 		rep.KnockAddr = netip.AddrPortFrom(o.Host.KnockAddr, port)
 	}
@@ -325,6 +326,7 @@ func SendAction(ctx context.Context, o ActionOptions, build func(nowMS uint64) (
 	// its single send: every copy in this loop is a resend of the same
 	// action, not a fresh one, so they all belong on the one port a fresh
 	// send would have chosen.
+	//nolint:gosec // G115: a millisecond wall-clock timestamp divided by 1000 is far within int64.
 	if port, ok := o.Host.CurrentKnockPort(int64(nowMS() / 1000)); ok {
 		rep.To = netip.AddrPortFrom(o.Host.KnockAddr, port)
 	}

@@ -62,4 +62,13 @@ exec docker run --rm \
   -w /src \
   -e "CGO_ENABLED=${CGO}" \
   "${TEST_IMAGE_TAG}" \
-  go test -p 1 "$@"
+  sh -c '
+    # --network=none leaves only loopback, but cmd/postern tests exercise the
+    # always-allow-interface check, which needs at least one non-loopback
+    # interface to resolve and to list back on a typo. A dummy link (iproute2
+    # is in the image for this) provides one without giving the container a
+    # route to anywhere, so the network isolation still holds.
+    ip link add postern0 type dummy 2>/dev/null || true
+    ip link set postern0 up 2>/dev/null || true
+    exec go test -p 1 "$@"
+  ' sh "$@"

@@ -639,6 +639,7 @@ func TestVectors_LoadFile_RefusesAnUnknownField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
+	//nolint:gosec // G304: path is this module's own vectors-file location from vectors.Path(), not external input.
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read vectors: %v", err)

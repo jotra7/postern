@@ -126,7 +126,7 @@ func newSweepFixture(t *testing.T, hostNames []string, badRecovery map[string]bo
 		kit.hosts = append(kit.hosts, sweepHost{name: name, signer: hostSigner, hostID: idBytes, addr: addr})
 
 		pub := hostSigner.Public()
-		invHosts.WriteString(fmt.Sprintf(`  - name: %q
+		fmt.Fprintf(&invHosts, `  - name: %q
     host_id: "%s"
     knock_addr: %s
     ssh: { host: %s.example.com, user: ops }
@@ -136,7 +136,7 @@ func newSweepFixture(t *testing.T, hostNames []string, badRecovery map[string]bo
       encryption: "%s"
     services: [ssh]
     groups: [prod]
-`, name, idHex, addr.String(), name, b64(pub.Signing), b64(pub.Encryption)))
+`, name, idHex, addr.String(), name, b64(pub.Signing), b64(pub.Encryption))
 
 		recovery := "ssh"
 		if badRecovery[name] {
@@ -144,7 +144,7 @@ func newSweepFixture(t *testing.T, hostNames []string, badRecovery map[string]bo
 			// resolves it after the pong and returns that lookup's error.
 			recovery = "nope"
 		}
-		cfgHosts.WriteString(fmt.Sprintf(`  - name: %q
+		fmt.Fprintf(&cfgHosts, `  - name: %q
     host_id: "%s"
     knock_addr: %s
     knock_port: 62201
@@ -154,7 +154,7 @@ func newSweepFixture(t *testing.T, hostNames []string, badRecovery map[string]bo
     ssh: { host: %s.example.com, user: ops }
     services:
       ssh: { port: 22, ttl: 120s }
-`, name, idHex, addr.String(), b64(pub.Encryption), b64(pub.Signing), recovery, name))
+`, name, idHex, addr.String(), b64(pub.Encryption), b64(pub.Signing), recovery, name)
 	}
 
 	invPath := filepath.Join(dir, "inventory.yaml")
