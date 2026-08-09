@@ -298,6 +298,7 @@ func (p *Prober) Sweep(ctx context.Context) Sweep {
 	// wait up to ClosedTimeout, and a port picked before that wait is a port
 	// that may no longer be the current window's by the time this actually
 	// goes on the wire.
+	//nolint:gosec // G115: a millisecond wall-clock timestamp divided by 1000 is far within int64.
 	if port, ok := p.Host.CurrentKnockPort(int64(ms / 1000)); ok {
 		sw.KnockAddr = netip.AddrPortFrom(p.Host.KnockAddr, port)
 	}
